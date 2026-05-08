@@ -1415,14 +1415,31 @@ function onReceiveFromGuest(data, conn){
         checkWinnerAfterQuit();
       }
       break;
-    case 'join_info': {
+   case 'join_info': {
       players[guestPeerId]={name:data.name,progress:0,finished:false,finishTime:null,isHost:false};
       toast('👋 '+data.name+' joined!','blue');
-      const welcome={type:'welcome',players,imgData:null,gridSize,gameStarted:false,maxPlayers};
+      const welcome={type:'welcome',players,imgData:null,gridSize,gameStarted:gameStarted,maxPlayers};
       if(conn&&conn.open) conn.send(welcome);
+      if(gameStarted && imgData){
+        // Game already running — send image in chunks to the late joiner
+        const CHUNK=60000;
+        const total=Math.ceil(imgData.length/CHUNK);
+        conn.send({type:'img_start',total,gridSize,players,maxPlayers});
+        for(let i=0;i<total;i++){
+          (function(idx){
+            setTimeout(()=>{
+              try{ conn.send({type:'img_chunk',idx,data:imgData.slice(idx*CHUNK,(idx+1)*CHUNK)}); }catch(e){}
+              if(idx===total-1){
+                setTimeout(()=>{ try{ conn.send({type:'img_done',gridSize,players,maxPlayers}); }catch(e){} },200);
+              }
+            },idx*80);
+          })(i);
+        }
+      }
       broadcastToGuests({type:'players_update',players,maxPlayers});
       updateLobbyPlayers(); updateLobbyStatus();
       break;
+    }
     }
     case 'progress':
       if(players[guestPeerId]) players[guestPeerId].progress=data.progress;
